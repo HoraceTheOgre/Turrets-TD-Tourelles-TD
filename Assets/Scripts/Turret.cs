@@ -4,86 +4,124 @@ using UnityEngine;
 
 public class Turret : MonoBehaviour
 {
-    public float Range = 3f;
-    public float Damage = 1f;
+    public float Range    = 3f;
+    public float Damage   = 1f;
     public float Cooldown = 1f;
-    private float m_LastBreak;
 
     public ParticleSystem Smoke;
-    private Enemy m_Target;
-    private Turret m_Turret;
-    private float m_LastFire;
-    [SerializeField]
-    private Transform m_CanonTip;
-    [SerializeField]
-    private AudioClip m_Firesound;
-    private AudioSource m_AS;
-    private LineRenderer m_Laser;
 
+    [SerializeField] private Transform  m_CanonTip;
+    [SerializeField] private AudioClip  m_Firesound;
+    [SerializeField] private GameObject SelectionHighlight;
+
+    private AudioSource  m_AS;
+    private LineRenderer m_Laser;
+    private Enemy        m_Target;
+
+    private float m_LastFire;
     private float m_LazerCooldown = 0.05f;
+
+    [HideInInspector] public bool IsControlled = false;
 
     private void Awake()
     {
-       
-        m_AS = GetComponent<AudioSource>();
+        m_AS    = GetComponent<AudioSource>();
         m_Laser = GetComponent<LineRenderer>();
-        m_Turret = GetComponent<Turret>();
         m_Laser.enabled = false;
+
+        if (SelectionHighlight) SelectionHighlight.SetActive(false);
     }
 
     private void Update()
     {
         if (m_Laser.enabled && Time.time >= m_LastFire + m_LazerCooldown)
-        {
             m_Laser.enabled = false;
-        }
-        // Out of range?
+
+        if (IsControlled)
+            HandleManualControl();
+        else
+            HandleAutoControl();
+    }
+
+    private void HandleAutoControl()
+    {
         if (m_Target && Vector3.Distance(m_Target.transform.position, transform.position) > Range)
-        {
             m_Target = null;
-        }
-        // No Target? Find one
+
         if (!m_Target)
-        {
             m_Target = FindTarget();
-        }
-        // Do stuff when there is a target
+
         if (m_Target)
         {
             transform.up = m_Target.transform.position - transform.position;
+
             if (Time.time >= m_LastFire + Cooldown)
             {
-                Fire();
+                Fire(m_Target.transform.position);
                 m_AS.PlayOneShot(m_Firesound);
             }
-
         }
     }
-    private void Fire()
+
+    private void HandleManualControl()
+    {
+        Vector3 mouseWorld = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        mouseWorld.z = 0f;
+        transform.up = mouseWorld - transform.position;
+
+        if (Input.GetMouseButtonDown(1) && Time.time >= m_LastFire + Cooldown)
+        {
+            Fire(mouseWorld);
+            m_AS.PlayOneShot(m_Firesound);
+        }
+    }
+
+    private void Fire(Vector3 targetPos)
     {
         m_LastFire = Time.time;
-        m_Target.GetComponent<Enemy>().TakeDamage(Damage);
 
-        m_Laser.SetPositions(new Vector3[] { m_CanonTip.position, m_Target.GetComponent<Enemy>().transform.position });
+        Vector2 dir      = (targetPos - m_CanonTip.position).normalized;
+        var     hit      = Physics2D.Raycast(m_CanonTip.position, dir, Range);
+        Vector3 endPoint = targetPos;
+
+        if (hit.collider != null)
+        {
+            Enemy e = hit.collider.GetComponent<Enemy>();
+            if (e != null)
+            {
+                e.TakeDamage(Damage);
+                endPoint = hit.collider.transform.position;
+            }
+        }
+
+        m_Laser.SetPositions(new Vector3[] { m_CanonTip.position, endPoint });
         m_Laser.enabled = true;
         Smoke.Play();
     }
+
+    public void SetControlled(bool controlled)
+    {
+        IsControlled = controlled;
+        m_Target     = null;
+        if (SelectionHighlight) SelectionHighlight.SetActive(controlled);
+    }
+
     private Enemy FindTarget()
     {
-        var t_Enemies = GameObject.FindObjectsOfType<Enemy>();
+        var   enemies        = FindObjectsOfType<Enemy>();
+        Enemy closestEnemy   = null;
+        float closestDistSqr = Range * Range;
 
-        Enemy t_ClosestEnemy = null;
-        float t_ClosestDistance = Range * Range;
-
-        foreach (var t_Enemy in t_Enemies)
+        foreach (var e in enemies)
         {
-            float t_Distance = (t_Enemy.transform.position - transform.position).sqrMagnitude;
-            if (t_Distance < t_ClosestDistance)
+            float d = (e.transform.position - transform.position).sqrMagnitude;
+            if (d < closestDistSqr)
             {
-                t_ClosestEnemy = t_Enemy;
-                t_ClosestDistance = t_Distance;
+                closestEnemy   = e;
+                closestDistSqr = d;
             }
         }
-        return t_ClosestEnemy;
+
+        return closestEnemy;
     }
 }
